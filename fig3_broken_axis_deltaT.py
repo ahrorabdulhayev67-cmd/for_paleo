@@ -214,17 +214,114 @@ def load_boysun_instrumental():
         else:
             raise ValueError("Annual harorat ustuni topilmadi!")
 
+    # ══════════════════════════════════════════════════════════
+    # MULTI-STEP TOZALASH PIPELINE
+    # ══════════════════════════════════════════════════════════
+
+    # ── 1-qadam: Oyliklardan annual qayta hisoblash (consistency check) ──
+    month_cols = ["jan", "feb", "mar", "apr", "may", "jun",
+                  "jul", "aug", "sep", "oct", "nov", "dec"]
+    available_months = [c for c in month_cols if c in boysun_df.columns]
+
+    if len(available_months) >= 6:
+        boysun_df["annual_calc"] = boysun_df[available_months].mean(axis=1)
+        # Agar annual va oyliklardan hisoblangan o'rtacha 1°C dan ko'p farq qilsa
+        # → annual ni oylik o'rtacha bilan almashtiramiz
+        diff = (boysun_df["annual"] - boysun_df["annual_calc"]).abs()
+        bad_annual = diff > 1.0
+        n_replaced = bad_annual.sum()
+        if n_replaced > 0:
+            boysun_df.loc[bad_annual, "annual"] = boysun_df.loc[bad_annual, "annual_calc"]
+            print(f"   📐 1-qadam: {n_replaced} ta yil oyliklardan qayta hisoblandi")
+
     d = boysun_df[["year", "annual"]].dropna().copy()
     d["year"] = d["year"].astype(int)
     d = d.sort_values("year").reset_index(drop=True)
 
-    # 3σ tozalash
-    mean_t = d["annual"].mean()
-    std_t = d["annual"].std()
-    d = d[(d["annual"] > mean_t - 3 * std_t) &
-          (d["annual"] < mean_t + 3 * std_t)].copy()
+    # ── 2-qadam: Hampel filter (running median ± 3×MAD) ─────────
+    # Lokal kontekstda anomal qiymatlarni aniqlash
+    def hampel_filter(series, window_size=7, n_sigma=3.0):
+        """
+        Hampel filter: running median ± n_sigma × MAD asosida outlierlarni
+        lokal median bilan almashtiradi.
+        
+        Bu usul global 3σ dan farqli — lokal trendni hisobga oladi.
+        """
+        n = len(series)
+        filtered = series.copy()
+        outlier_indices = []
+        k = 1.4826  # MAD → σ konversiya koeffitsienti (normal taqsimot uchun)
 
-    # Anomaliya (1961-1990)
+        for i in range(window_size, n - window_size):
+            window = series[i - window_size: i + window_size + 1]
+            median_val = np.nanmedian(window)
+            mad = np.nanmedian(np.abs(window - median_val))
+            sigma_est = k * mad
+
+            if sigma_est == 0:
+                continue
+
+            if np.abs(series.iloc[i] - median_val) > n_sigma * sigma_est:
+                filtered.iloc[i] = median_val
+                outlier_indices.append(i)
+
+        return filtered, outlier_indices
+
+    d_annual_original = d["annual"].copy()
+    d["annual"], hampel_outliers = hampel_filter(
+        d["annual"], window_size=5, n_sigma=2.5
+    )
+    if hampel_outliers:
+        outlier_years = d.iloc[hampel_outliers]["year"].tolist()
+        print(f"   🔍 2-qadam (Hampel): {len(hampel_outliers)} ta outlier tuzatildi")
+        print(f"      Yillar: {outlier_years}")
+
+    # ── 3-qadam: IQR-based winsorization ────────────────────────
+    # Haddan tashqari qiymatlarni IQR chegaralariga qisqartirish
+    Q1 = d["annual"].quantile(0.25)
+    Q3 = d["annual"].quantile(0.75)
+    IQR = Q3 - Q1
+    lower_fence = Q1 - 1.5 * IQR
+    upper_fence = Q3 + 1.5 * IQR
+
+    n_winsorized = ((d["annual"] < lower_fence) | (d["annual"] > upper_fence)).sum()
+    d["annual"] = d["annual"].clip(lower=lower_fence, upper=upper_fence)
+    if n_winsorized > 0:
+        print(f"   📊 3-qadam (IQR winsorization): {n_winsorized} ta qiymat chegaralandi")
+        print(f"      Diapazon: [{lower_fence:.2f}, {upper_fence:.2f}]°C")
+
+    # ── 4-qadam: Trend-aware residual check ─────────────────────
+    # Chiziqli trenddan 2σ dan ortiq og'igan nuqtalarni interpolatsiya qilish
+    from numpy.polynomial import polynomial as P
+    years_arr = d["year"].values.astype(float)
+    annual_arr = d["annual"].values
+    valid_mask = np.isfinite(annual_arr)
+
+    if valid_mask.sum() > 10:
+        # 2-darajali polinom trend
+        coeffs = np.polyfit(years_arr[valid_mask], annual_arr[valid_mask], 2)
+        trend_vals = np.polyval(coeffs, years_arr)
+        residuals = annual_arr - trend_vals
+        res_std = np.nanstd(residuals)
+
+        # Trenddan 2σ dan ortiq og'igan nuqtalar
+        trend_outliers = np.abs(residuals) > 2.0 * res_std
+        n_trend_outliers = trend_outliers.sum()
+
+        if n_trend_outliers > 0:
+            # Interpolatsiya bilan almashtirish
+            d.loc[trend_outliers, "annual"] = np.interp(
+                years_arr[trend_outliers],
+                years_arr[~trend_outliers],
+                annual_arr[~trend_outliers]
+            )
+            outlier_yrs = d.loc[trend_outliers, "year"].tolist()
+            print(f"   📈 4-qadam (Trend-aware): {n_trend_outliers} ta nuqta interpolatsiya qilindi")
+            print(f"      Yillar: {outlier_yrs}")
+
+    print(f"   ✅ Tozalash tugadi: {len(d)} yil saqlanib qoldi")
+
+    # ── Anomaliya (1961-1990 baseline) ───────────────────────
     baseline = d[(d["year"] >= 1961) & (d["year"] <= 1990)]
     baseline_mean = baseline["annual"].mean() if len(baseline) >= 10 else d["annual"].mean()
     d["anomaly"] = d["annual"] - baseline_mean
