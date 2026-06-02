@@ -389,13 +389,8 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
     # X limitsni o'rnatamiz (MIS 5 ko'rinishi uchun 130 ka gacha)
     ax_paleo.set_xlim(132, -1)  # Inverted: eski chap, yangi o'ng
 
-    # DIB bosqichlari (fon shading + vertikal punktir chegaralar)
-    for mis in MIS_STAGES:
-        ax_paleo.axvspan(
-            mis['start'], mis['end'],
-            color=mis['color'], alpha=0.35,
-            zorder=0, linewidth=0
-        )
+    # DIB bosqichlari (oq fon + vertikal punktir chegaralar)
+    # Fon rangsiz — faqat chiziqlar bilan ajratiladi
 
     # DIB chegaralari — vertikal punktir chiziqlar
     # (oq-qora bosma nashrda ham ko'rinadigan)
