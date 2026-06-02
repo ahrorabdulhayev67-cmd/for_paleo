@@ -1,15 +1,16 @@
 """
-Fig. 3: Broken Axis ΔT Figure
-Left panel  → Paleodavr (ΔT speleothem reconstruction, TON-2)
-Right panel → Instrumental davr (Boysun MS temperature anomaly)
+1-rasm: Broken Axis ΔT Figure
+Chap panel  → Paleodavr (ΔT stalagmit rekonstruksiyasi, TON-2)
+O'ng panel  → Instrumental davr (Boysun MS harorat anomaliyasi)
 
 HAQIQIY MA'LUMOTLARGA ASOSLANGAN:
-- TON2_iso_original.csv → δ¹⁸O calcite → fractionation → ΔT
-- Бойсун МС.xlsx → Instrumental annual temperature
+- TON2_iso_original.csv → δ¹⁸O kalsit → fraktsionatsiya → ΔT
+- Бойсун МС.xlsx → Instrumental yillik harorat
 
-Quaternary Science Reviews uslubida.
+O'zbekiston ilmiy jurnallari uslubida.
+Quaternary Science Reviews ranglar palitrasida.
 
-Author: TON-2 paleoclimate study
+Author: TON-2 paleoklimat tadqiqoti
 """
 
 import numpy as np
@@ -21,21 +22,21 @@ import warnings
 warnings.filterwarnings('ignore')
 
 # ══════════════════════════════════════════════════════════════
-# RANGLAR — Quaternary Science Reviews uslubi
+# RANGLAR — O'zbekiston ilmiy jurnallari / QSR uslubi
 # ══════════════════════════════════════════════════════════════
 
 COLORS = {
     'deltaT_line': '#333333',       # ΔT asosiy chiziq (qo'ng'ir-qora)
     'uncertainty': '#CCCCCC',       # Noaniqlik shading (och kulrang)
-    'warm_bar': '#C0392B',          # Issiq yillar (Boysun) — och qizil
-    'cold_bar': '#2980B9',          # Sovuq yillar (Boysun) — och ko'k
-    'smooth_line': '#1A1A2E',       # Moving average (qora)
+    'warm_bar': '#C0392B',          # Ijobiy anomaliya (Boysun)
+    'cold_bar': '#2980B9',          # Salbiy anomaliya (Boysun)
+    'smooth_line': '#1A1A2E',       # Harakatlanuvchi o'rtacha (qora)
     'ton2_marker': '#6C3483',       # TON-2 nuqtalar (to'q binafsha)
     'zero_line': '#666666',         # Nol chizig'i
     'hiatus': '#E0E0E0',           # Hiatus zonalari (och kulrang)
     'trend_line': '#666666',        # Isish trendi
-    'mis_warm': '#FFF8E7',          # MIS issiq fon
-    'mis_cold': '#EBF3FB',          # MIS sovuq fon
+    'mis_warm': '#FDEBD0',          # DIB iliq davrlar (yumshoq shaftoli)
+    'mis_cold': '#D6EAF8',          # DIB sovuq davrlar (och ko'k)
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -48,13 +49,13 @@ COEFF_T_LOW = 0.50    # ‰/°C
 COEFF_T_HIGH = 0.58   # ‰/°C
 BIN_W = 500            # 500 yillik bin
 
-# MIS bosqichlari (issiq/sovuq ranglar)
+# MIS bosqichlari (iliq/sovuq ranglar) — DIB (Dengiz izotop bosqichi)
 MIS_STAGES = [
-    {'name': 'MIS 1', 'start': 0, 'end': 11.7, 'color': COLORS['mis_warm']},
-    {'name': 'MIS 2', 'start': 11.7, 'end': 29, 'color': COLORS['mis_cold']},
-    {'name': 'MIS 3', 'start': 29, 'end': 57, 'color': COLORS['mis_warm']},
-    {'name': 'MIS 4', 'start': 57, 'end': 71, 'color': COLORS['mis_cold']},
-    {'name': 'MIS 5', 'start': 71, 'end': 130, 'color': COLORS['mis_warm']},
+    {'name': 'DIB 1', 'start': 0, 'end': 11.7, 'color': COLORS['mis_warm']},
+    {'name': 'DIB 2', 'start': 11.7, 'end': 29, 'color': COLORS['mis_cold']},
+    {'name': 'DIB 3', 'start': 29, 'end': 57, 'color': COLORS['mis_warm']},
+    {'name': 'DIB 4', 'start': 57, 'end': 71, 'color': COLORS['mis_cold']},
+    {'name': 'DIB 5', 'start': 71, 'end': 130, 'color': COLORS['mis_warm']},
 ]
 
 # Hiatus davrlari (ka)
@@ -256,7 +257,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
 
     plt.style.use('default')
     plt.rcParams.update({
-        'font.family': 'DejaVu Sans',
+        'font.family': 'Arial',
         'font.size': 10,
         'axes.linewidth': 1.0,
         'figure.dpi': 300,
@@ -299,7 +300,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
             zorder=0, linewidth=0
         )
 
-    # MIS yorliqlari — pastroqda, kichik font
+    # DIB yorliqlari — pastroqda, kichik font
     for mis in MIS_STAGES:
         mid = (mis['start'] + mis['end']) / 2
         ax_paleo.text(
@@ -337,14 +338,14 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
         dT_smooth + dT_unc,
         color=COLORS['uncertainty'], alpha=0.4,
         zorder=3, linewidth=0,
-        label='Uncertainty (frac. + coeff.)'
+        label='Noaniqlik diapazoni'
     )
 
     # ΔT smoothed chiziq
     ax_paleo.plot(
         age_ka, dT_smooth,
         color=COLORS['deltaT_line'], linewidth=1.8,
-        zorder=5, label='ΔT (2500-yr smoothed)'
+        zorder=5, label='ΔT (2500 yillik silliqlangan)'
     )
 
     # ── Annotatsiyalar ───────────────────────────────────────
@@ -355,7 +356,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
         lgm_age = age_ka[lgm_mask][lgm_idx]
         lgm_val = dT_smooth[lgm_mask][lgm_idx]
         ax_paleo.annotate(
-            f'LGM\n{lgm_val:.1f}°C',
+            f'OGM\n{lgm_val:.1f}°C',
             xy=(lgm_age, lgm_val),
             xytext=(lgm_age + 10, lgm_val - 1.2),
             arrowprops=dict(arrowstyle='->', lw=1.0, color='#555555'),
@@ -371,7 +372,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
         mis5e_age = age_ka[mis5e_mask][mis5e_idx]
         mis5e_val = dT_smooth[mis5e_mask][mis5e_idx]
         ax_paleo.annotate(
-            f'MIS 5e\n+{mis5e_val:.1f}°C',
+            f'DIB 5e\n+{mis5e_val:.1f}°C',
             xy=(mis5e_age, mis5e_val),
             xytext=(mis5e_age - 12, mis5e_val + 1.2),
             arrowprops=dict(arrowstyle='->', lw=1.0, color='#555555'),
@@ -385,28 +386,27 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
     if hol_mask.any():
         hol_idx = np.argmax(dT_smooth[hol_mask])
         hol_val = dT_smooth[hol_mask][hol_idx]
-        # Y o'qi yonida (o'ng tomonda) matn
         ax_paleo.text(
-            0.98, (hol_val - (-6)) / 12,  # normalize to axes coords
-            'Holocene\nOptimum',
+            0.98, (hol_val - (-6)) / 12,
+            'Golosen\noptimumi',
             ha='right', va='center', fontsize=7.5,
             color='#555555', style='italic',
             transform=ax_paleo.transAxes
         )
 
     # ── Chap panel formatting ────────────────────────────────
-    ax_paleo.set_xlabel('Age (ka BP)', fontsize=10, fontweight='bold')
-    ax_paleo.set_ylabel('ΔT (°C, vs modern)', fontsize=10, fontweight='bold')
+    ax_paleo.set_xlabel('Yosh (ming yil oldin)', fontsize=10, fontweight='bold')
+    ax_paleo.set_ylabel('ΔT (°C, zamonaviyga nisbatan)', fontsize=10, fontweight='bold')
     ax_paleo.grid(True, alpha=0.15, linestyle=':', linewidth=0.5)
     ax_paleo.legend(
         loc='lower left', fontsize=8, frameon=True,
         framealpha=0.9, edgecolor='#CCCCCC', fancybox=False
     )
 
-    # Panel label — pastroqda (MIS bilan ustma-ust chiqmasligi uchun)
+    # Panel label
     ax_paleo.text(
-        0.02, 0.92, 'a',
-        transform=ax_paleo.transAxes, fontsize=13,
+        0.02, 0.92, 'a)',
+        transform=ax_paleo.transAxes, fontsize=12,
         fontweight='bold', va='top', ha='left',
         color='#222222'
     )
@@ -435,11 +435,11 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
     ax_instr.axhline(y=0, color=COLORS['zero_line'],
                      linewidth=0.8, linestyle='--', alpha=0.5, zorder=1)
 
-    # 11-yr MA
+    # 11 yillik harakatlanuvchi o'rtacha
     ax_instr.plot(
         years, moving_avg,
         color=COLORS['smooth_line'], linewidth=2.0,
-        zorder=5, label='11-yr moving average'
+        zorder=5, label='11 yillik harakatlanuvchi o\'rtacha'
     )
 
     # Trend (1990+)
@@ -449,7 +449,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
         trend_years, trend_line_vals,
         color=COLORS['trend_line'], linewidth=1.3,
         linestyle=':', zorder=4,
-        label=f'Trend (+{trend_per_decade:.2f}°C/dec)'
+        label=f'Trend (+{trend_per_decade:.2f}°C/o\'n yillik)'
     )
 
     # TON-2 nuqtalar: 1941 va 2008
@@ -485,8 +485,8 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
     # O'ng panel formatting
     ax_instr.set_xlim(years.min() - 2, years.max() + 2)
     ax_instr.set_ylim(-2, 2)
-    ax_instr.set_xlabel('Year (CE)', fontsize=10, fontweight='bold')
-    ax_instr.set_ylabel('T anomaly (°C)', fontsize=10, fontweight='bold')
+    ax_instr.set_xlabel('Yil (milodiy)', fontsize=10, fontweight='bold')
+    ax_instr.set_ylabel('Harorat anomaliyasi (°C)', fontsize=10, fontweight='bold')
     ax_instr.yaxis.set_label_position('right')
     ax_instr.yaxis.tick_right()
     ax_instr.grid(True, alpha=0.15, linestyle=':', linewidth=0.5)
@@ -496,8 +496,8 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
     )
 
     ax_instr.text(
-        0.03, 0.92, 'b',
-        transform=ax_instr.transAxes, fontsize=13,
+        0.03, 0.92, 'b)',
+        transform=ax_instr.transAxes, fontsize=12,
         fontweight='bold', va='top', ha='left',
         color='#222222'
     )
@@ -543,7 +543,8 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
 def main():
     """Asosiy funksiya"""
     print("=" * 60)
-    print("FIG. 3: BROKEN AXIS ΔT — Quaternary Science Reviews style")
+    print("1-RASM: BROKEN AXIS ΔT")
+    print("  O'zbekiston ilmiy jurnallari uslubida")
     print("=" * 60)
 
     paleo_data = load_ton2_and_compute_deltaT()
