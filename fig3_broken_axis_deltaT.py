@@ -389,13 +389,28 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
     # X limitsni o'rnatamiz (MIS 5 ko'rinishi uchun 130 ka gacha)
     ax_paleo.set_xlim(132, -1)  # Inverted: eski chap, yangi o'ng
 
-    # MIS bosqichlari (fon shading, to'liq panel balandlikda)
+    # DIB bosqichlari (fon shading + vertikal punktir chegaralar)
     for mis in MIS_STAGES:
         ax_paleo.axvspan(
             mis['start'], mis['end'],
-            color=mis['color'], alpha=0.5,
+            color=mis['color'], alpha=0.35,
             zorder=0, linewidth=0
         )
+
+    # DIB chegaralari — vertikal punktir chiziqlar
+    # (oq-qora bosma nashrda ham ko'rinadigan)
+    dib_boundaries = sorted(set(
+        [mis['start'] for mis in MIS_STAGES] +
+        [mis['end'] for mis in MIS_STAGES]
+    ))
+    # Faqat ichki chegaralar (0 va 130 ni chiqarib tashlaymiz)
+    for boundary in dib_boundaries:
+        if 0 < boundary < 130:
+            ax_paleo.axvline(
+                x=boundary, color='#888888',
+                linewidth=0.7, linestyle=':',
+                alpha=0.8, zorder=1
+            )
 
     # DIB yorliqlari — pastroqda, kichik font
     for mis in MIS_STAGES:
@@ -403,7 +418,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
         ax_paleo.text(
             mid, 0.03, mis['name'],
             ha='center', va='bottom', fontsize=7,
-            color='#777777', fontweight='500',
+            color='#666666', fontweight='500',
             transform=ax_paleo.get_xaxis_transform()
         )
 
