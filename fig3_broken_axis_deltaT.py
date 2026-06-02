@@ -364,23 +364,13 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
 
     # MIS bosqichlari (yuqorida, yengil)
     for mis in MIS_STAGES:
-        if mis['start'] / 1000 <= age_ka.max():
+        if mis['start'] <= age_ka.max():
             ax_paleo.axvspan(
                 mis['start'], mis['end'],
                 ymin=0.92, ymax=1.0,
                 color=mis['color'], alpha=0.7,
                 zorder=0, linewidth=0
             )
-            mid = (mis['start'] + mis['end']) / 2
-            if mid <= age_ka.max():
-                ax_paleo.text(
-                    mid, ax_paleo.get_ylim()[1] if ax_paleo.get_ylim()[1] != 1 else 8,
-                    mis['name'],
-                    ha='center', va='bottom', fontsize=7.5,
-                    color='#555555', fontweight='600',
-                    transform=ax_paleo.get_xaxis_transform(),
-                    y=0.94
-                )
 
     # Hiatus zonalari (grey shading)
     for h_start, h_end in HIATUS_PERIODS_KA:
@@ -503,7 +493,7 @@ def create_broken_axis_figure(paleo_data, boysun_data, trend_coeff, trend_per_de
         color='#333333'
     )
 
-    # MIS labels yuqorida
+    # MIS labels yuqorida (xaxis transform bilan)
     for mis in MIS_STAGES:
         mid = (mis['start'] + mis['end']) / 2
         if mid <= age_ka.max():
