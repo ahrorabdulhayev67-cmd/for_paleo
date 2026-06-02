@@ -4,11 +4,10 @@ O'zbekiston mahalliy jurnali uchun moslashtirilgan versiya
 
 Asosiy o'zgarishlar:
 - O'zbekcha ilmiy-akademik yozuvlar
-- DIB (MIS) chegaralari vertikal punktir chiziqlar bilan ajratilgan
-- Shading alpha kamaytilgan (ochiqlashtirilgan)
-- O'nlik kasr: vergul (,) ishlatilgan
+- Rangli fon (shading) olib tashlangan — toza oq fon
+- DIB (MIS) chegaralari faqat vertikal punktir chiziqlar bilan ajratilgan
 - Ko'k ustunlardagi anomal qiymatlar filtrlangan
-- Rang palittrasi yaxshilangan
+- Bosma nashr uchun optimallashtirilgan minimalist dizayn
 
 Muallif: Paleoklimatologiya laboratoriyasi
 """
@@ -47,17 +46,14 @@ DIB_stages = [
     {'name': 'DIB 5', 'start': 71, 'end': 130, 'type': 'warm'},
 ]
 
-# Yaxshilangan ranglar (och, bosma nashr uchun mos)
-SHADING_COLORS = {
-    'warm': '#FDEBD0',   # Yumshoq shaftoli (iliq davrlar)
-    'cold': '#D6EAF8',   # Och ko'k (sovuq davrlar)
-}
-SHADING_ALPHA = 0.35  # Kamaytilgan shaffoflik
+# Fon rangi — OQ (toza, minimalist dizayn)
+# DIB bosqichlari faqat vertikal kontur chiziqlar bilan ajratiladi
+# Bu bosma nashrda eng yaxshi natija beradi
 
 # DIB chegaralari chizig'i sozlamalari
-DIB_BORDER_COLOR = '#666666'
+DIB_BORDER_COLOR = '#555555'
 DIB_BORDER_STYLE = '--'  # punktir
-DIB_BORDER_WIDTH = 0.8
+DIB_BORDER_WIDTH = 0.9
 
 # ══════════════════════════════════════════════════════════════
 # TEST MA'LUMOTLARI YARATISH
@@ -205,16 +201,7 @@ def create_publication_figure(paleo_data, modern_data,
     temp = paleo_data['temp_smoothed']
     unc = paleo_data['uncertainty']
     
-    # --- DIB shading (och rang) ---
-    for dib in DIB_stages:
-        color = SHADING_COLORS[dib['type']]
-        ax_paleo.axvspan(
-            dib['start'], dib['end'],
-            color=color, alpha=SHADING_ALPHA,
-            zorder=0, linewidth=0
-        )
-    
-    # --- DIB chegaralari (vertikal punktir chiziqlar) ---
+    # --- DIB chegaralari (vertikal kontur chiziqlar) — shading O'RNIGA ---
     dib_boundaries = set()
     for dib in DIB_stages:
         dib_boundaries.add(dib['start'])
@@ -348,11 +335,8 @@ def create_publication_figure(paleo_data, modern_data,
     moving_avg = modern_data['moving_avg']
     trend_slope = modern_data['trend_slope']
     
-    # --- Fon (kulrang shading — zamonaviy davr) ---
-    ax_modern.axvspan(
-        years[0], years[-1],
-        color='#F0F0F0', alpha=0.5, zorder=0
-    )
+    # --- Fon: oq (toza) ---
+    ax_modern.set_facecolor('white')
     
     # --- Ustunli diagramma (qizil=ijobiy, ko'k=salbiy) ---
     colors = ['#E07060' if a >= 0 else '#6099C0' for a in anomaly]
