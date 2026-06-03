@@ -656,9 +656,14 @@ def main(obs_file="Бойсун МС  8.xlsx",
         df_obs = standardize_dataframe(df_raw, year_col, month_cols_raw)
         df_obs, _ = quality_control(df_obs)
         df_obs = fill_gaps(df_obs, method='none')
-    except:
-        print("  ⚠️  Tozalash skripti topilmadi. Test ma'lumotlari ishlatilmoqda...")
-        from boysun_precipitation_cleaning import create_test_precipitation_data
+    except Exception as e:
+        print(f"  ⚠️  Tozalash skripti topilmadi yoki xatolik: {e}")
+        print("  Test ma'lumotlari ishlatilmoqda...")
+        try:
+            from boysun_precipitation_cleaning import create_test_precipitation_data
+        except ImportError:
+            # Agar import bo'lmasa, lokal funksiya ishlatiladi
+            create_test_precipitation_data = create_synthetic_era5
         df_raw = create_test_precipitation_data()
         # Oddiy standartlashtirish
         df_obs = df_raw.copy()
