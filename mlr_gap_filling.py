@@ -1,22 +1,11 @@
 """
-Multiple Linear Regression (MLR) — Ko'p stansiyali bo'shliq to'ldirish
-═══════════════════════════════════════════════════════════════════════
+Boysun MS yog'ingarchilik bo'shliqlarini to'ldirish
+Denov + Mingchuqur stansiyalari yordamida (MLR)
+═══════════════════════════════════════════════════
 
-Boysun MS (1977-1984) bo'shliqlarini qo'shni stansiyalar bilan to'ldirish:
-  - Denov stansiyasi
-  - Mingchuqur stansiyasi
-  - (Ixtiyoriy) ERA5 reanaliz
+Usul: P_Boysun = β₀ + β₁×P_Denov + β₂×P_Mingchuqur
 
-Usul: Multiple Linear Regression (MLR)
-  P_Boysun = β₀ + β₁×P_Denov + β₂×P_Mingchuqur
-
-Bu ERA5 dan ANCHA ANIQ, chunki haqiqiy qo'shni stansiya ma'lumotlari
-yog'ingarchilik variatsiyasini yaxshiroq ushlaydi.
-
-Kerakli kutubxonalar:
-  pip install numpy pandas matplotlib scipy openpyxl
-
-Muallif: Paleoklimatologiya laboratoriyasi
+pip install numpy pandas matplotlib scipy openpyxl
 """
 
 import numpy as np
@@ -26,442 +15,315 @@ from scipy import stats
 import warnings
 warnings.filterwarnings('ignore')
 
-
 # ══════════════════════════════════════════════════════════════
-# 1-QADAM: EXCEL FAYLLARNI KO'RISH (sheet nomlarini aniqlash)
-# ══════════════════════════════════════════════════════════════
-
-def check_excel_sheets(filepath='Denov_Mingchuqur.xlsx'):
-    """
-    Excel fayl ichidagi sheet nomlarini ko'rish.
-    Birinchi marta ishga tushirib, sheet nomlarini aniqlang.
-    """
-    xl = pd.ExcelFile(filepath)
-    print(f"📂 Fayl: {filepath}")
-    print(f"   Sheet nomlari: {xl.sheet_names}")
-    print()
-    
-    for sheet in xl.sheet_names:
-        df = xl.parse(sheet, nrows=5)
-        print(f"  === {sheet} ===")
-        print(f"  Ustunlar: {list(df.columns)}")
-        print(f"  Dastlabki 3 qator:")
-        print(df.head(3).to_string())
-        print()
-    
-    xl.close()
-    return xl.sheet_names
-
-
-# ══════════════════════════════════════════════════════════════
-# 2-QADAM: MA'LUMOTLARNI YUKLASH VA STANDARTLASHTIRISH
+# SOZLAMALAR — SHU YERDA O'ZGARTIRING
 # ══════════════════════════════════════════════════════════════
 
-def load_station_data(filepath, sheet_name, station_name=''):
-    """
-    Stansiya yog'ingarchilik ma'lumotlarini yuklash va standartlashtirish.
-    
-    Kutilgan format: birinchi ustun = yil, qolgan 12 ta = oylar (mm)
-    
-    Parametrlar:
-    -----------
-    filepath : str - Excel fayl yo'li
-    sheet_name : str - Sheet nomi
-    station_name : str - Stansiya nomi (chiqish uchun)
-    """
+BOYSUN_FILE = 'boysun_precipitation_clean.csv'
+DENOV_MINGCHUQUR_FILE = 'Denov_Mingchuqur.xlsx'
+DENOV_SHEET = None          # None = avtomatik topadi
+MINGCHUQUR_SHEET = None     # None = avtomatik topadi
+GAP_START = 1977
+GAP_END = 1984
+
+MONTH_COLS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+              'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+# ══════════════════════════════════════════════════════════════
+# FUNKSIYALAR
+# ══════════════════════════════════════════════════════════════
+
+def load_station(filepath, sheet_name, name=''):
+    """Excel dan stansiya ma'lumotlarini yuklash."""
     df_raw = pd.read_excel(filepath, sheet_name=sheet_name)
-    
-    month_cols_std = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-                      'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-    
-    # Birinchi ustun = yil, keyingi 12 ta = oylar
     cols = list(df_raw.columns)
     
     df = pd.DataFrame()
     df['year'] = pd.to_numeric(df_raw[cols[0]], errors='coerce').astype('Int64')
-    
-    for i, std_col in enumerate(month_cols_std):
+    for i, m in enumerate(MONTH_COLS):
         if i + 1 < len(cols):
-            df[std_col] = pd.to_numeric(df_raw[cols[i + 1]], errors='coerce')
+            df[m] = pd.to_numeric(df_raw[cols[i + 1]], errors='coerce')
+            df.loc[df[m] < 0, m] = 0
     
-    # Salbiy qiymatlarni 0 ga
-    for col in month_cols_std:
-        if col in df.columns:
-            df.loc[df[col] < 0, col] = 0
-    
-    # Yillik jami
-    df['annual'] = df[month_cols_std].sum(axis=1, min_count=10)
-    
-    # NaN yillarni olib tashlash
+    df['annual'] = df[MONTH_COLS].sum(axis=1, min_count=10)
     df = df.dropna(subset=['year']).sort_values('year').reset_index(drop=True)
     df['year'] = df['year'].astype(int)
     
-    name = station_name or sheet_name
     print(f"  ✅ {name}: {len(df)} yil ({df['year'].min()}-{df['year'].max()})")
-    
     return df
 
 
-def load_all_data(denov_mingchuqur_file='Denov_Mingchuqur.xlsx',
-                  denov_sheet=None,
-                  mingchuqur_sheet=None,
-                  boysun_file='boysun_precipitation_clean.csv'):
-    """
-    Barcha stansiya ma'lumotlarini yuklash.
+def find_sheets(filepath):
+    """Sheet nomlarini avtomatik topish."""
+    xl = pd.ExcelFile(filepath)
+    sheets = xl.sheet_names
+    xl.close()
     
-    Parametrlar:
-    -----------
-    denov_mingchuqur_file : str - Denov/Mingchuqur Excel fayl
-    denov_sheet : str - Denov sheet nomi (None = avtomatik)
-    mingchuqur_sheet : str - Mingchuqur sheet nomi (None = avtomatik)
-    boysun_file : str - Boysun CSV fayl
-    """
+    denov_sheet = None
+    mingchuqur_sheet = None
+    
+    for s in sheets:
+        sl = s.lower()
+        if 'денов' in sl or 'denov' in sl:
+            denov_sheet = s
+        elif 'минг' in sl or 'ming' in sl or 'мингчуқур' in sl:
+            mingchuqur_sheet = s
+    
+    if denov_sheet is None and len(sheets) >= 1:
+        denov_sheet = sheets[0]
+    if mingchuqur_sheet is None and len(sheets) >= 2:
+        mingchuqur_sheet = sheets[1]
+    
+    return denov_sheet, mingchuqur_sheet, sheets
+
+
+def run():
+    """To'liq jarayon: yuklash → MLR → to'ldirish → validatsiya → grafik."""
+    
+    print("=" * 70)
+    print("  MLR BO'SHLIQ TO'LDIRISH")
+    print("  Boysun MS ← Denov + Mingchuqur")
+    print("=" * 70)
+    print()
+    
+    # ──────────────────────────────────────────
+    # 1. MA'LUMOTLARNI YUKLASH
+    # ──────────────────────────────────────────
     print("━" * 70)
-    print("  📂 MA'LUMOTLARNI YUKLASH")
+    print("  1. MA'LUMOTLARNI YUKLASH")
     print("━" * 70)
     print()
     
-    # Sheet nomlarini aniqlash
-    if denov_sheet is None or mingchuqur_sheet is None:
-        xl = pd.ExcelFile(denov_mingchuqur_file)
-        sheets = xl.sheet_names
-        xl.close()
-        print(f"  Mavjud sheetlar: {sheets}")
-        print()
-        
-        # Avtomatik aniqlash
-        if denov_sheet is None:
-            for s in sheets:
-                if 'денов' in s.lower() or 'denov' in s.lower():
-                    denov_sheet = s
-                    break
-            if denov_sheet is None and len(sheets) >= 1:
-                denov_sheet = sheets[0]
-        
-        if mingchuqur_sheet is None:
-            for s in sheets:
-                if 'минг' in s.lower() or 'ming' in s.lower():
-                    mingchuqur_sheet = s
-                    break
-            if mingchuqur_sheet is None and len(sheets) >= 2:
-                mingchuqur_sheet = sheets[1]
+    # Sheet nomlarini topish
+    global DENOV_SHEET, MINGCHUQUR_SHEET
+    denov_sh, ming_sh, all_sheets = find_sheets(DENOV_MINGCHUQUR_FILE)
     
-    print(f"  Denov sheet: '{denov_sheet}'")
-    print(f"  Mingchuqur sheet: '{mingchuqur_sheet}'")
+    if DENOV_SHEET is None:
+        DENOV_SHEET = denov_sh
+    if MINGCHUQUR_SHEET is None:
+        MINGCHUQUR_SHEET = ming_sh
+    
+    print(f"  Fayllar: {DENOV_MINGCHUQUR_FILE}")
+    print(f"  Mavjud sheetlar: {all_sheets}")
+    print(f"  Denov sheet: '{DENOV_SHEET}'")
+    print(f"  Mingchuqur sheet: '{MINGCHUQUR_SHEET}'")
     print()
     
-    # Yuklash
-    df_denov = load_station_data(denov_mingchuqur_file, denov_sheet, 'Denov')
-    df_mingchuqur = load_station_data(denov_mingchuqur_file, mingchuqur_sheet, 'Mingchuqur')
-    
-    # Boysun
-    df_boysun = pd.read_csv(boysun_file)
+    df_boysun = pd.read_csv(BOYSUN_FILE)
     print(f"  ✅ Boysun: {len(df_boysun)} yil ({df_boysun['year'].min()}-{df_boysun['year'].max()})")
+    
+    df_denov = load_station(DENOV_MINGCHUQUR_FILE, DENOV_SHEET, 'Denov')
+    df_mingchuqur = load_station(DENOV_MINGCHUQUR_FILE, MINGCHUQUR_SHEET, 'Mingchuqur')
     print()
     
-    return df_boysun, df_denov, df_mingchuqur
-
-
-# ══════════════════════════════════════════════════════════════
-# 3-QADAM: MLR BIAS CORRECTION VA TO'LDIRISH
-# ══════════════════════════════════════════════════════════════
-
-def mlr_gap_filling(df_boysun, df_denov, df_mingchuqur,
-                     gap_start=1977, gap_end=1984):
-    """
-    Multiple Linear Regression bilan bo'shliqni to'ldirish.
-    
-    Model: P_Boysun = β₀ + β₁×P_Denov + β₂×P_Mingchuqur
-    
-    Har bir oy uchun alohida regressiya koeffitsientlari hisoblanadi.
-    """
+    # ──────────────────────────────────────────
+    # 2. MLR KOEFFITSIENTLARNI HISOBLASH
+    # ──────────────────────────────────────────
     print("━" * 70)
-    print("  📐 MULTIPLE LINEAR REGRESSION (MLR)")
+    print("  2. MLR KOEFFITSIENTLAR (har bir oy uchun)")
     print("━" * 70)
     print()
     
-    month_cols = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-                  'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+    gap_years = set(range(GAP_START, GAP_END + 1))
+    boysun_yrs = set(df_boysun.dropna(subset=['annual'])['year'])
+    denov_yrs = set(df_denov.dropna(subset=['annual'])['year'])
+    ming_yrs = set(df_mingchuqur.dropna(subset=['annual'])['year'])
+    common_years = sorted((boysun_yrs & denov_yrs & ming_yrs) - gap_years)
     
-    gap_years = set(range(gap_start, gap_end + 1))
-    
-    # Umumiy yillar (bo'shliqsiz, uchala stansiyada ham bor)
-    boysun_years = set(df_boysun.dropna(subset=['annual'])['year'])
-    denov_years = set(df_denov.dropna(subset=['annual'])['year'])
-    mingchuqur_years = set(df_mingchuqur.dropna(subset=['annual'])['year'])
-    
-    common_years = sorted((boysun_years & denov_years & mingchuqur_years) - gap_years)
-    
-    print(f"  Umumiy kuzatilgan yillar: {len(common_years)}")
-    print(f"  Davr: {min(common_years)}-{max(common_years)}")
-    print(f"  Bo'shliq: {gap_start}-{gap_end}")
+    print(f"  Umumiy kuzatilgan yillar: {len(common_years)} ({min(common_years)}-{max(common_years)})")
     print()
     
-    # Oylik MLR koeffitsientlar
-    print(f"  {'Oy':<6} {'R²':<8} {'R²adj':<8} {'RMSE':<8} {'β₀':<8} {'β₁(Den)':<10} {'β₂(Ming)':<10}")
-    print(f"  {'─'*6} {'─'*8} {'─'*8} {'─'*8} {'─'*8} {'─'*10} {'─'*10}")
+    print(f"  {'Oy':<5} {'R²':<7} {'R²adj':<7} {'RMSE':<7} {'β₀':<8} {'β₁(Den)':<9} {'β₂(Ming)':<9} {'n':<4}")
+    print(f"  {'─'*5} {'─'*7} {'─'*7} {'─'*7} {'─'*8} {'─'*9} {'─'*9} {'─'*4}")
     
     mlr_params = {}
     
-    for col in month_cols:
-        # Ma'lumotlarni yig'ish
-        y_vals = []  # Boysun (target)
-        x1_vals = []  # Denov
-        x2_vals = []  # Mingchuqur
+    for col in MONTH_COLS:
+        y_list, x1_list, x2_list = [], [], []
         
-        for year in common_years:
-            b_row = df_boysun[df_boysun['year'] == year]
-            d_row = df_denov[df_denov['year'] == year]
-            m_row = df_mingchuqur[df_mingchuqur['year'] == year]
+        for yr in common_years:
+            b = df_boysun[df_boysun['year'] == yr][col].values
+            d = df_denov[df_denov['year'] == yr][col].values
+            m = df_mingchuqur[df_mingchuqur['year'] == yr][col].values
             
-            if len(b_row) == 0 or len(d_row) == 0 or len(m_row) == 0:
-                continue
-            
-            b_val = b_row[col].values[0]
-            d_val = d_row[col].values[0]
-            m_val = m_row[col].values[0]
-            
-            if pd.notna(b_val) and pd.notna(d_val) and pd.notna(m_val):
-                y_vals.append(b_val)
-                x1_vals.append(d_val)
-                x2_vals.append(m_val)
+            if len(b) and len(d) and len(m):
+                bv, dv, mv = b[0], d[0], m[0]
+                if pd.notna(bv) and pd.notna(dv) and pd.notna(mv):
+                    y_list.append(bv)
+                    x1_list.append(dv)
+                    x2_list.append(mv)
         
-        y = np.array(y_vals)
-        X = np.column_stack([np.ones(len(y)), x1_vals, x2_vals])
-        
-        if len(y) < 10:
-            print(f"  {col:<6} ⚠️  Yetarli ma'lumot yo'q ({len(y)} nuqta)")
-            mlr_params[col] = None
-            continue
-        
-        # MLR: OLS
-        # β = (X'X)⁻¹ X'y
-        try:
-            beta = np.linalg.lstsq(X, y, rcond=None)[0]
-        except:
-            mlr_params[col] = None
-            continue
-        
-        # Bashorat va xatolik
-        y_pred = X @ beta
-        residuals = y - y_pred
-        
-        # R²
-        ss_res = np.sum(residuals**2)
-        ss_tot = np.sum((y - np.mean(y))**2)
-        r_sq = 1 - ss_res / ss_tot if ss_tot > 0 else 0
-        
-        # Adjusted R²
+        y = np.array(y_list)
         n = len(y)
-        p = 2  # prediktor soni
-        r_sq_adj = 1 - (1 - r_sq) * (n - 1) / (n - p - 1)
         
-        # RMSE
-        rmse = np.sqrt(np.mean(residuals**2))
+        if n < 10:
+            mlr_params[col] = None
+            print(f"  {col:<5} ⚠️  kam ma'lumot ({n})")
+            continue
         
-        mlr_params[col] = {
-            'beta0': beta[0],
-            'beta1_denov': beta[1],
-            'beta2_mingchuqur': beta[2],
-            'r_sq': r_sq,
-            'r_sq_adj': r_sq_adj,
-            'rmse': rmse,
-            'n': n
-        }
+        X = np.column_stack([np.ones(n), x1_list, x2_list])
+        beta = np.linalg.lstsq(X, y, rcond=None)[0]
         
-        print(f"  {col:<6} {r_sq:<8.3f} {r_sq_adj:<8.3f} {rmse:<8.1f} "
-              f"{beta[0]:<8.2f} {beta[1]:<10.3f} {beta[2]:<10.3f}")
+        y_pred = X @ beta
+        ss_res = np.sum((y - y_pred)**2)
+        ss_tot = np.sum((y - y.mean())**2)
+        r_sq = 1 - ss_res / ss_tot if ss_tot > 0 else 0
+        r_sq_adj = 1 - (1 - r_sq) * (n - 1) / (n - 3)
+        rmse = np.sqrt(ss_res / n)
+        
+        mlr_params[col] = {'b0': beta[0], 'b1': beta[1], 'b2': beta[2],
+                           'r_sq': r_sq, 'rmse': rmse}
+        
+        print(f"  {col:<5} {r_sq:<7.3f} {r_sq_adj:<7.3f} {rmse:<7.1f} "
+              f"{beta[0]:<8.2f} {beta[1]:<9.3f} {beta[2]:<9.3f} {n:<4}")
     
     print()
     
     # ──────────────────────────────────────────
-    # BO'SHLIQNI TO'LDIRISH
+    # 3. BO'SHLIQNI TO'LDIRISH
     # ──────────────────────────────────────────
     print("━" * 70)
-    print(f"  🔄 BO'SHLIQ TO'LDIRISH ({gap_start}-{gap_end})")
+    print(f"  3. BO'SHLIQ TO'LDIRISH ({GAP_START}-{GAP_END})")
     print("━" * 70)
     print()
     
     filled_rows = []
     
-    print(f"  {'Yil':<6}", end='')
-    for col in month_cols:
+    print(f"  {'Yil':<5}", end='')
+    for col in MONTH_COLS:
         print(f" {col:<5}", end='')
-    print(f" {'Yillik':<8}")
-    print(f"  {'─'*6}", end='')
-    for _ in month_cols:
+    print(f"  {'Yillik'}")
+    print(f"  {'─'*5}", end='')
+    for _ in MONTH_COLS:
         print(f" {'─'*5}", end='')
-    print(f" {'─'*8}")
+    print(f"  {'─'*7}")
     
-    for year in range(gap_start, gap_end + 1):
+    for year in range(GAP_START, GAP_END + 1):
         row = {'year': year}
-        
         d_row = df_denov[df_denov['year'] == year]
         m_row = df_mingchuqur[df_mingchuqur['year'] == year]
         
-        for col in month_cols:
-            params = mlr_params.get(col)
-            
-            if params is None:
+        for col in MONTH_COLS:
+            p = mlr_params.get(col)
+            if p is None:
                 row[col] = np.nan
                 continue
             
-            # Denov va Mingchuqur qiymatlari
-            d_val = d_row[col].values[0] if len(d_row) > 0 else np.nan
-            m_val = m_row[col].values[0] if len(m_row) > 0 else np.nan
+            dv = d_row[col].values[0] if len(d_row) > 0 else np.nan
+            mv = m_row[col].values[0] if len(m_row) > 0 else np.nan
             
-            if pd.isna(d_val) or pd.isna(m_val):
-                # Agar bitta stansiya bo'lmasa — mavjudini ishlatish
-                if pd.notna(d_val):
-                    pred = params['beta0'] + params['beta1_denov'] * d_val
-                elif pd.notna(m_val):
-                    pred = params['beta0'] + params['beta2_mingchuqur'] * m_val
-                else:
-                    row[col] = np.nan
-                    continue
+            if pd.notna(dv) and pd.notna(mv):
+                pred = p['b0'] + p['b1'] * dv + p['b2'] * mv
+            elif pd.notna(dv):
+                pred = p['b0'] + p['b1'] * dv
+            elif pd.notna(mv):
+                pred = p['b0'] + p['b2'] * mv
             else:
-                pred = params['beta0'] + params['beta1_denov'] * d_val + params['beta2_mingchuqur'] * m_val
+                row[col] = np.nan
+                continue
             
             row[col] = max(0, round(pred, 1))
         
-        monthly_vals = [row[col] for col in month_cols if pd.notna(row.get(col))]
-        row['annual'] = round(sum(monthly_vals), 1) if monthly_vals else np.nan
+        vals = [row[c] for c in MONTH_COLS if pd.notna(row.get(c))]
+        row['annual'] = round(sum(vals), 1) if vals else np.nan
         row['data_quality'] = 'infilled_mlr'
         filled_rows.append(row)
         
-        print(f"  {year:<6}", end='')
-        for col in month_cols:
+        print(f"  {year:<5}", end='')
+        for col in MONTH_COLS:
             v = row[col]
             print(f" {v:<5.1f}" if pd.notna(v) else f" {'--':<5}", end='')
-        print(f" {row['annual']:<8.1f}" if pd.notna(row['annual']) else f" {'--':<8}")
+        print(f"  {row['annual']:.1f}" if pd.notna(row['annual']) else "  --")
     
     print()
     
-    # Asosiy DataFrame ga birlashtirish
+    # Birlashtirish
     df_filled = df_boysun.copy()
     if 'data_quality' not in df_filled.columns:
         df_filled['data_quality'] = 'observed'
-    
-    df_filled = df_filled[~df_filled['year'].isin(range(gap_start, gap_end + 1))]
-    df_gap = pd.DataFrame(filled_rows)
-    df_filled = pd.concat([df_filled, df_gap], ignore_index=True)
+    df_filled = df_filled[~df_filled['year'].isin(range(GAP_START, GAP_END + 1))]
+    df_filled = pd.concat([df_filled, pd.DataFrame(filled_rows)], ignore_index=True)
     df_filled = df_filled.sort_values('year').reset_index(drop=True)
     
-    print(f"  ✅ {len(filled_rows)} yil to'ldirildi (MLR: Denov + Mingchuqur)")
+    print(f"  ✅ {len(filled_rows)} yil to'ldirildi")
     print()
     
-    return df_filled, mlr_params
-
-
-# ══════════════════════════════════════════════════════════════
-# 4-QADAM: CROSS-VALIDATION
-# ══════════════════════════════════════════════════════════════
-
-def cross_validate_mlr(df_boysun, df_denov, df_mingchuqur, mlr_params,
-                        gap_start=1977, gap_end=1984):
-    """Leave-k-out cross-validation."""
-    
+    # ──────────────────────────────────────────
+    # 4. CROSS-VALIDATION
+    # ──────────────────────────────────────────
     print("━" * 70)
-    print("  ✅ CROSS-VALIDATION")
+    print("  4. CROSS-VALIDATION")
     print("━" * 70)
     print()
     
-    month_cols = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-                  'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
-    
-    gap_years = set(range(gap_start, gap_end + 1))
-    boysun_years = set(df_boysun.dropna(subset=['annual'])['year'])
-    denov_years = set(df_denov.dropna(subset=['annual'])['year'])
-    mingchuqur_years = set(df_mingchuqur.dropna(subset=['annual'])['year'])
-    common_years = sorted((boysun_years & denov_years & mingchuqur_years) - gap_years)
-    
-    # 8 ta tasodifiy yilni test qilish
     np.random.seed(42)
     n_test = min(8, len(common_years) // 3)
     test_years = sorted(np.random.choice(common_years, size=n_test, replace=False))
+    print(f"  Test yillari: {list(test_years)}")
     
-    print(f"  Test yillari ({n_test} ta): {test_years}")
-    print()
-    
-    annual_errors = []
-    
-    for year in test_years:
-        obs_annual = df_boysun[df_boysun['year'] == year]['annual'].values[0]
-        d_row = df_denov[df_denov['year'] == year]
-        m_row = df_mingchuqur[df_mingchuqur['year'] == year]
+    errors = []
+    for yr in test_years:
+        obs = df_boysun[df_boysun['year'] == yr]['annual'].values[0]
+        d_row = df_denov[df_denov['year'] == yr]
+        m_row = df_mingchuqur[df_mingchuqur['year'] == yr]
         
-        pred_annual = 0
-        for col in month_cols:
-            params = mlr_params.get(col)
-            if params is None:
+        pred = 0
+        for col in MONTH_COLS:
+            p = mlr_params.get(col)
+            if p is None:
                 continue
-            d_val = d_row[col].values[0] if len(d_row) > 0 else 0
-            m_val = m_row[col].values[0] if len(m_row) > 0 else 0
-            pred = params['beta0'] + params['beta1_denov'] * d_val + params['beta2_mingchuqur'] * m_val
-            pred_annual += max(0, pred)
+            dv = d_row[col].values[0] if len(d_row) > 0 else 0
+            mv = m_row[col].values[0] if len(m_row) > 0 else 0
+            pred += max(0, p['b0'] + p['b1'] * dv + p['b2'] * mv)
         
-        if pd.notna(obs_annual):
-            annual_errors.append(pred_annual - obs_annual)
+        if pd.notna(obs):
+            errors.append(pred - obs)
     
-    errors = np.array(annual_errors)
+    errors = np.array(errors)
     mae = np.mean(np.abs(errors))
     rmse = np.sqrt(np.mean(errors**2))
     bias = np.mean(errors)
     obs_mean = df_boysun['annual'].dropna().mean()
     
-    print(f"  YILLIK NATIJALAR:")
-    print(f"    MAE:  {mae:.1f} mm")
-    print(f"    RMSE: {rmse:.1f} mm")
-    print(f"    Bias: {bias:+.1f} mm")
-    print(f"    Nisbiy xatolik: {mae/obs_mean*100:.1f}%")
+    print(f"\n  MAE:  {mae:.1f} mm")
+    print(f"  RMSE: {rmse:.1f} mm")
+    print(f"  Bias: {bias:+.1f} mm")
+    print(f"  Nisbiy xatolik: {mae/obs_mean*100:.1f}%")
     print()
     
-    return mae, rmse, bias
-
-
-# ══════════════════════════════════════════════════════════════
-# 5-QADAM: GRAFIK VA EKSPORT
-# ══════════════════════════════════════════════════════════════
-
-def plot_and_export(df_filled, mae, rmse, gap_start=1977, gap_end=1984):
-    """Natijalar grafigi va CSV eksport."""
-    
+    # ──────────────────────────────────────────
+    # 5. GRAFIK
+    # ──────────────────────────────────────────
     print("━" * 70)
-    print("  🎨 GRAFIK VA EKSPORT")
+    print("  5. GRAFIK")
     print("━" * 70)
     print()
     
     plt.rcParams.update({'font.family': 'Arial', 'font.size': 10, 'figure.dpi': 150})
     fig, ax = plt.subplots(figsize=(14, 5))
     
-    observed = df_filled[df_filled['data_quality'] == 'observed']
-    infilled = df_filled[df_filled['data_quality'] == 'infilled_mlr']
-    mean_ann = observed['annual'].mean()
+    obs = df_filled[df_filled['data_quality'] == 'observed']
+    inf = df_filled[df_filled['data_quality'] == 'infilled_mlr']
+    mean_ann = obs['annual'].mean()
     
-    ax.bar(observed['year'], observed['annual'],
-           color='#457B9D', alpha=0.7, width=0.8, label='Kuzatilgan')
-    ax.bar(infilled['year'], infilled['annual'],
-           color='#E07060', alpha=0.8, width=0.8,
-           label=f"MLR to'ldirilgan ({gap_start}-{gap_end})",
-           edgecolor='#CC0000', linewidth=0.5)
+    ax.bar(obs['year'], obs['annual'], color='#457B9D', alpha=0.7, width=0.8, label='Kuzatilgan')
+    ax.bar(inf['year'], inf['annual'], color='#E07060', alpha=0.8, width=0.8,
+           label=f"MLR ({GAP_START}-{GAP_END})", edgecolor='#CC0000', linewidth=0.5)
     ax.axhline(y=mean_ann, color='#1a1a1a', ls='--', lw=1.2,
                label=f"O'rtacha: {mean_ann:.0f} mm")
-    ax.axvspan(gap_start-0.5, gap_end+0.5, color='#FFEEEE', alpha=0.3, zorder=0)
+    ax.axvspan(GAP_START-0.5, GAP_END+0.5, color='#FFEEEE', alpha=0.3, zorder=0)
     
-    # 11 yillik o'rtacha
-    all_annual = df_filled.set_index('year')['annual'].dropna()
-    ma = all_annual.rolling(11, center=True, min_periods=6).mean()
+    all_ann = df_filled.set_index('year')['annual'].dropna()
+    ma = all_ann.rolling(11, center=True, min_periods=6).mean()
     ax.plot(ma.index, ma.values, color='#1a1a1a', lw=2.0, label="11 yillik o'rtacha")
     
     ax.set_xlabel('Yil', fontsize=11, fontweight='bold')
     ax.set_ylabel("Yillik yog'ingarchilik (mm)", fontsize=11, fontweight='bold')
-    ax.set_title("Boysun MS — MLR bilan to'ldirilgan (Denov + Mingchuqur)",
+    ax.set_title("Boysun MS — MLR (Denov + Mingchuqur) bilan to'ldirilgan",
                  fontsize=12, fontweight='bold')
     ax.legend(loc='upper right', fontsize=9)
     ax.set_xlim(1934, 2026)
-    
-    ax.text(0.02, 0.95,
-            f"MLR validatsiya:\nMAE = {mae:.1f} mm\nRMSE = {rmse:.1f} mm",
+    ax.text(0.02, 0.95, f"MAE={mae:.1f} mm\nRMSE={rmse:.1f} mm",
             transform=ax.transAxes, fontsize=9, va='top',
             bbox=dict(boxstyle='round', facecolor='white', edgecolor='#CCC', alpha=0.9))
     
@@ -470,62 +332,15 @@ def plot_and_export(df_filled, mae, rmse, gap_start=1977, gap_end=1984):
     plt.savefig('mlr_gap_filling_results.pdf', dpi=300, bbox_inches='tight')
     plt.show()
     
-    # CSV eksport
+    # ──────────────────────────────────────────
+    # 6. SAQLASH
+    # ──────────────────────────────────────────
     output = 'boysun_precipitation_filled_mlr.csv'
     df_filled.to_csv(output, index=False)
     
-    print(f"  ✅ Grafik: mlr_gap_filling_results.png / .pdf")
-    print(f"  ✅ Ma'lumot: {output}")
+    print(f"  💾 {output}")
+    print(f"  💾 mlr_gap_filling_results.png")
     print()
-    
-    return output
-
-
-# ══════════════════════════════════════════════════════════════
-# ASOSIY DASTUR
-# ══════════════════════════════════════════════════════════════
-
-def main(denov_mingchuqur_file='Denov_Mingchuqur.xlsx',
-         denov_sheet=None,
-         mingchuqur_sheet=None,
-         boysun_file='boysun_precipitation_clean.csv',
-         gap_start=1977, gap_end=1984):
-    """
-    To'liq MLR gap-filling jarayoni.
-    
-    ISHLATISH:
-    ─────────
-    # 1. Avval sheet nomlarini ko'ring:
-    check_excel_sheets('Denov_Mingchuqur.xlsx')
-    
-    # 2. Keyin to'ldiring:
-    df = main(denov_sheet='...', mingchuqur_sheet='...')
-    """
-    
-    print("=" * 70)
-    print("  MLR BO'SHLIQ TO'LDIRISH")
-    print("  Boysun MS ← Denov + Mingchuqur")
-    print("=" * 70)
-    print()
-    
-    # 1. Ma'lumotlarni yuklash
-    df_boysun, df_denov, df_mingchuqur = load_all_data(
-        denov_mingchuqur_file, denov_sheet, mingchuqur_sheet, boysun_file
-    )
-    
-    # 2. MLR va to'ldirish
-    df_filled, mlr_params = mlr_gap_filling(
-        df_boysun, df_denov, df_mingchuqur, gap_start, gap_end
-    )
-    
-    # 3. Cross-validation
-    mae, rmse, bias = cross_validate_mlr(
-        df_boysun, df_denov, df_mingchuqur, mlr_params, gap_start, gap_end
-    )
-    
-    # 4. Grafik va eksport
-    plot_and_export(df_filled, mae, rmse, gap_start, gap_end)
-    
     print("=" * 70)
     print("  ✨ TAYYOR!")
     print("=" * 70)
@@ -535,8 +350,4 @@ def main(denov_mingchuqur_file='Denov_Mingchuqur.xlsx',
 
 # ══════════════════════════════════════════════════════════════
 if __name__ == "__main__":
-    # Avval sheetlarni ko'ring:
-    # check_excel_sheets('Denov_Mingchuqur.xlsx')
-    
-    # Keyin ishga tushiring:
-    df = main()
+    df = run()
