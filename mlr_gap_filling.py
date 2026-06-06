@@ -26,26 +26,30 @@ MINGCHUQUR_SHEET = None     # None = avtomatik topadi
 GAP_START = 1977
 GAP_END = 1984
 
-MONTH_COLS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
-              'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+# Oy ustunlari — Boysun CSV dagi haqiqiy nomlar asosida aniqlanadi
+# Agar CSV da I, II, III... bo'lsa yoki 1, 2, 3... bo'lsa — avtomatik topadi
+MONTH_COLS = None  # run() ichida avtomatik aniqlanadi
 
 # ══════════════════════════════════════════════════════════════
 # FUNKSIYALAR
 # ══════════════════════════════════════════════════════════════
 
-def load_station(filepath, sheet_name, name=''):
+def load_station(filepath, sheet_name, month_cols, name=''):
     """Excel dan stansiya ma'lumotlarini yuklash."""
     df_raw = pd.read_excel(filepath, sheet_name=sheet_name)
     cols = list(df_raw.columns)
     
     df = pd.DataFrame()
     df['year'] = pd.to_numeric(df_raw[cols[0]], errors='coerce').astype('Int64')
-    for i, m in enumerate(MONTH_COLS):
-        if i + 1 < len(cols):
-            df[m] = pd.to_numeric(df_raw[cols[i + 1]], errors='coerce')
-            df.loc[df[m] < 0, m] = 0
     
-    df['annual'] = df[MONTH_COLS].sum(axis=1, min_count=10)
+    # Birinchi ustun = yil, keyingi 12 ta = oylar
+    for i in range(min(12, len(cols) - 1)):
+        col_name = month_cols[i] if i < len(month_cols) else f"m{i+1}"
+        df[col_name] = pd.to_numeric(df_raw[cols[i + 1]], errors='coerce')
+        df.loc[df[col_name] < 0, col_name] = 0
+    
+    available_months = [c for c in month_cols if c in df.columns]
+    df['annual'] = df[available_months].sum(axis=1, min_count=10)
     df = df.dropna(subset=['year']).sort_values('year').reset_index(drop=True)
     df['year'] = df['year'].astype(int)
     
@@ -80,6 +84,8 @@ def find_sheets(filepath):
 def run():
     """To'liq jarayon: yuklash → MLR → to'ldirish → validatsiya → grafik."""
     
+    global MONTH_COLS
+    
     print("=" * 70)
     print("  MLR BO'SHLIQ TO'LDIRISH")
     print("  Boysun MS ← Denov + Mingchuqur")
@@ -109,11 +115,24 @@ def run():
     print(f"  Mingchuqur sheet: '{MINGCHUQUR_SHEET}'")
     print()
     
+    # Boysun yuklash va oy ustunlarini aniqlash
     df_boysun = pd.read_csv(BOYSUN_FILE)
     print(f"  ✅ Boysun: {len(df_boysun)} yil ({df_boysun['year'].min()}-{df_boysun['year'].max()})")
+    print(f"  Ustunlar: {list(df_boysun.columns)}")
     
-    df_denov = load_station(DENOV_MINGCHUQUR_FILE, DENOV_SHEET, 'Denov')
-    df_mingchuqur = load_station(DENOV_MINGCHUQUR_FILE, MINGCHUQUR_SHEET, 'Mingchuqur')
+    # Oy ustunlarini avtomatik aniqlash
+    skip_cols = ['year', 'annual', 'data_quality', 'annual_calc']
+    MONTH_COLS = [c for c in df_boysun.columns if c not in skip_cols]
+    
+    # Faqat birinchi 12 tasini olish (oylar)
+    if len(MONTH_COLS) > 12:
+        MONTH_COLS = MONTH_COLS[:12]
+    
+    print(f"  Oy ustunlari ({len(MONTH_COLS)}): {MONTH_COLS}")
+    print()
+    
+    df_denov = load_station(DENOV_MINGCHUQUR_FILE, DENOV_SHEET, MONTH_COLS, 'Denov')
+    df_mingchuqur = load_station(DENOV_MINGCHUQUR_FILE, MINGCHUQUR_SHEET, MONTH_COLS, 'Mingchuqur')
     print()
     
     # ──────────────────────────────────────────
